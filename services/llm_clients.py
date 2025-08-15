@@ -2,14 +2,13 @@ import os
 from openai import OpenAI
 import google.generativeai as genai
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("Not found: OPENAI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
-
 
 def query_gemini_moderator(text_to_check: str) -> bool:
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    if not GEMINI_API_KEY:
+        raise ValueError("Not found: GEMINI_API_KEY")
+    genai.configure(api_key=GEMINI_API_KEY)
+
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     prompt = (
         "You are a thoughtful, context-aware moderator for a fun, energetic live streaming platform. "
@@ -35,6 +34,10 @@ def query_gemini_moderator(text_to_check: str) -> bool:
 
 
 def query_openai_moderator(text_to_check: str) -> bool:
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    if not OPENAI_API_KEY:
+        raise ValueError("Not found: OPENAI_API_KEY")
+    
     try:
         system_prompt = (
             "You are a thoughtful, context-aware moderator for a fun, energetic live streaming platform. "
