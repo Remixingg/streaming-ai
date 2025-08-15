@@ -181,3 +181,4 @@ cython_debug/
 .cursorindexingignore
 private_keys.json
 agents/test_agent.py
+run_test.py
