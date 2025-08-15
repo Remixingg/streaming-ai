@@ -18,7 +18,7 @@ def create_moderator_agent(seed: str) -> Agent:
     @moderator_protocol.on_message(model=ModerationRequest, replies=ModerationResponse)
     async def moderate_message(ctx: Context, sender: str, msg: ModerationRequest):
         ctx.logger.info(f"Received moderation request for text: '{msg.text}'")
-        is_bad = query_gemini_moderator(msg.text)
+        is_bad = await query_gemini_moderator(msg.text)
         await ctx.send(sender, ModerationResponse(is_inappropriate=is_bad))
         ctx.logger.info(f"Sent response: is_inappropriate={is_bad}")
 
