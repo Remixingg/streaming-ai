@@ -69,7 +69,7 @@ if genai and GEMINI_API_KEY:
 
 async def classify_with_asione(text: str) -> (bool):
 
-    if ASI_ONE_API_KEY:
+    if not ASI_ONE_API_KEY:
         raise RuntimeError("ASI:One API key not configured")
 
     headers = {
@@ -214,7 +214,7 @@ def create_moderator_agent(seed: str) -> Agent:
                 is_bad = True
                 ctx.logger.info(f"[moderator] Message contains harmful words, classified as harmful.")
             else:
-                if not ASI_ONE_API_KEY:
+                if ASI_ONE_API_KEY:
                     tried_methods.append("ASI:One")
                     is_bad = await classify_with_asione(msg.text)
                 elif GEMINI_API_KEY and genai:
@@ -301,6 +301,12 @@ def create_moderator_agent(seed: str) -> Agent:
                 EndSessionContent(type="end-session")
             ],
         ))
+
+    @chat_proto.on_message(ChatAcknowledgement)
+    async def handle_chat_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
+        ctx.logger.info(
+            f"Received chat acknowledgement from {sender} for {msg.acknowledged_msg_id}"
+        )
 
     agent.include(moderation_protocol)
     agent.include(chat_proto,publish_manifest=True)
