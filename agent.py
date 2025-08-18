@@ -1,11 +1,17 @@
 import os
 import json
 from dotenv import load_dotenv
+from datetime import datetime
+from uuid import uuid4
 
 load_dotenv()
 
 import httpx
 from uagents import Agent, Context, Protocol, Model
+from uagents_core.contrib.protocols.chat import (
+    ChatMessage, ChatAcknowledgement, TextContent,
+    EndSessionContent, StartSessionContent, chat_protocol_spec
+)
 from uagents.setup import fund_agent_if_low
 import traceback
 
@@ -186,7 +192,9 @@ def create_moderator_agent(seed: str) -> Agent:
         name="moderator_agent",
         seed=seed,
         port=8000,
-        endpoint=["http://localhost:8000/submit"],
+        mailbox=True,
+        publish_agent_details=True,
+        readme_path="README.md",
     )
 
     try:
@@ -250,7 +258,52 @@ def create_moderator_agent(seed: str) -> Agent:
         else:
             ctx.logger.debug("ICP_URL not configured; skipping ICP logging.")
 
+    chat_proto = Protocol(spec=chat_protocol_spec)
+
+    @chat_proto.on_message(ChatMessage)
+    async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
+        await ctx.send(sender, ChatAcknowledgement(
+            timestamp=datetime.utcnow(), acknowledged_msg_id=msg.msg_id
+        ))
+
+        user_text = None
+        for item in msg.content:
+            if isinstance(item, TextContent):
+                user_text = item.text
+                break
+            if isinstance(item, StartSessionContent):
+                ctx.logger.info("Chat session started")
+
+        if not user_text:
+            reply = "Please send text content to classify."
+        else:
+            try:
+                is_bad = False
+                if contains_harmful_words(user_text):
+                    is_bad = True
+                else:
+                    if ASI_ONE_API_KEY:
+                        is_bad = await classify_with_asione(user_text)
+                    elif GEMINI_API_KEY and genai:
+                        is_bad = await classify_with_gemini(user_text)
+                    else:
+                        is_bad = False
+                reply = f"Inappropriate: {'YES' if is_bad else 'NO'}"
+            except Exception as e:
+                ctx.logger.error(f"Chat moderation error: {e}")
+                reply = "Sorry, I couldn't process that right now."
+
+        await ctx.send(sender, ChatMessage(
+            timestamp=datetime.utcnow(),
+            msg_id=uuid4(),
+            content=[
+                TextContent(type="text", text=reply),
+                EndSessionContent(type="end-session")
+            ],
+        ))
+
     agent.include(moderation_protocol)
+    agent.include(chat_proto,publish_manifest=True)
 
     return agent
 
