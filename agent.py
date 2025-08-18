@@ -267,24 +267,25 @@ def create_moderator_agent(seed: str) -> Agent:
         ))
 
         user_text = None
+        saw_start = False
         for item in msg.content:
             if isinstance(item, TextContent):
                 user_text = item.text
                 break
             if isinstance(item, StartSessionContent):
-                ctx.logger.info("Chat session started")
+                saw_start = True
 
-        if not user_text:
-            reply = "Please send text content to classify."
+        if saw_start and not user_text:
+            reply = "Hi! Send me a message and I’ll classify if it’s inappropriate."
         else:
             try:
                 is_bad = False
-                if contains_harmful_words(user_text):
+                if user_text and contains_harmful_words(user_text):
                     is_bad = True
                 else:
-                    if ASI_ONE_API_KEY:
+                    if user_text and ASI_ONE_API_KEY:
                         is_bad = await classify_with_asione(user_text)
-                    elif GEMINI_API_KEY and genai:
+                    elif user_text and GEMINI_API_KEY and genai:
                         is_bad = await classify_with_gemini(user_text)
                     else:
                         is_bad = False
@@ -298,7 +299,6 @@ def create_moderator_agent(seed: str) -> Agent:
             msg_id=uuid4(),
             content=[
                 TextContent(type="text", text=reply),
-                EndSessionContent(type="end-session")
             ],
         ))
 
