@@ -238,26 +238,6 @@ def create_moderator_agent(seed: str) -> Agent:
         except Exception as e:
             ctx.logger.error(f"[moderator] Failed to send response to caller: {e}")
 
-        # ICP
-        if ICP_URL:
-            try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    payload = {
-                        "text": msg.text,
-                        "is_inappropriate": bool(is_bad),
-                        "source_agent": agent.wallet.address(),
-                    }
-                    # Try POSTing raw JSON. Your Motoko canister should expose an HTTP handler that accepts JSON.
-                    r = await client.post(ICP_URL, json=payload)
-                    if r.status_code >= 200 and r.status_code < 300:
-                        ctx.logger.info("[moderator] Successfully posted moderation result to ICP canister.")
-                    else:
-                        ctx.logger.warning(f"[moderator] Posting to ICP returned status {r.status_code}: {r.text}")
-            except Exception as e:
-                ctx.logger.error(f"[moderator] Error sending moderation result to ICP: {e}")
-        else:
-            ctx.logger.debug("ICP_URL not configured; skipping ICP logging.")
-
     chat_proto = Protocol(spec=chat_protocol_spec)
 
     @chat_proto.on_message(ChatMessage)
@@ -307,6 +287,56 @@ def create_moderator_agent(seed: str) -> Agent:
         ctx.logger.info(
             f"Received chat acknowledgement from {sender} for {msg.acknowledged_msg_id}"
         )
+    
+    @agent.on_rest_post("/moderate", ModerationRequest, ModerationResponse)
+    async def rest_moderate(ctx: Context, req: ModerationRequest) -> ModerationResponse:
+        text = req.text or ""
+        is_bad = False
+        tried_methods = []
+        
+        try:
+            if contains_harmful_words(text):
+                is_bad = True
+            else:
+                if ASI_ONE_API_KEY:
+                    tried_methods.append("ASI:One")
+                    is_bad = await classify_with_asione(text)
+                elif GEMINI_API_KEY and genai:
+                    tried_methods.append("Gemini")
+                    is_bad = await classify_with_gemini(text)
+                else:
+                    tried_methods.append("None")
+                    is_bad = False
+                    if not DEBUG_ALLOW_NO_LLM:
+                        ctx.logger.error("No LLM API keys found and DEBUG_ALLOW_NO_LLM is false.")
+
+        except Exception as e:
+            ctx.logger.error(f"REST moderation error ({tried_methods}): {repr(e)}")
+            ctx.logger.error(traceback.format_exc())
+            method = "error"
+            is_bad = False
+
+        response = ModerationResponse(is_inappropriate=is_bad)
+    
+        if ICP_URL:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    payload = {
+                        "text": text,
+                        "is_inappropriate": bool(is_bad),
+                        "source_agent": agent.wallet.address(),
+                    }
+                    r = await client.post(ICP_URL, json=payload)
+                    if r.status_code >= 200 and r.status_code < 300:
+                        ctx.logger.info("[moderator] Successfully posted moderation result to ICP canister.")
+                    else:
+                        ctx.logger.warning(f"[moderator] Posting to ICP returned status {r.status_code}: {r.text}")
+            except Exception as e:
+                ctx.logger.error(f"[moderator] Error sending moderation result to ICP: {e}")
+        else:
+            ctx.logger.debug("ICP_URL not configured; skipping ICP logging.")
+
+        return response
 
     agent.include(moderation_protocol)
     agent.include(chat_proto,publish_manifest=True)
