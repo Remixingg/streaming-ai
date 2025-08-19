@@ -194,7 +194,7 @@ def create_moderator_agent(seed: str) -> Agent:
         port=8000,
         mailbox=True,
         publish_agent_details=True,
-        readme_path="README.md",
+        readme_path="moderator_README.md",
     )
 
     try:
