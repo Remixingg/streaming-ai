@@ -1,19 +1,17 @@
 import os
 import json
+import httpx
+import traceback
 from dotenv import load_dotenv
 from datetime import datetime
 from uuid import uuid4
-
-load_dotenv()
-
-import httpx
 from uagents import Agent, Context, Protocol, Model
 from uagents_core.contrib.protocols.chat import (
-    ChatMessage, ChatAcknowledgement, TextContent,
-    EndSessionContent, StartSessionContent, chat_protocol_spec
+    ChatMessage, ChatAcknowledgement, TextContent, chat_protocol_spec
 )
 from uagents.setup import fund_agent_if_low
-import traceback
+
+load_dotenv()
 
 # ASI:One fallback (alt)
 try:
@@ -26,14 +24,23 @@ except Exception:
 # -----------------------------------------------------------------------------
 # Config
 # -----------------------------------------------------------------------------
-MODERATOR_AGENT_SEED = os.getenv("MODERATOR_AGENT_SEED")
-ASI_ONE_API_KEY = os.getenv("ASI_ONE_API_KEY")
-ASI_ONE_URL = os.getenv("ASI_ONE_URL", "https://api.asi1.ai/v1/chat/completions")
-ASI_ONE_MODEL = os.getenv("ASI_ONE_MODEL", "asi1-mini")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-ICP_URL = os.getenv("ICP_URL")  # e.g. https://<canister_id>.ic0.app/moderation
-# AGENTVERSE_API_KEY = os.getenv("AGENTVERSE_API_KEY")
-DEBUG_ALLOW_NO_LLM = os.getenv("DEBUG_ALLOW_NO_LLM", "0") == "1"
+class Config:
+    def __init__(self):
+        self.MODERATOR_AGENT_SEED = os.getenv("MODERATOR_AGENT_SEED")
+        self.ASI_ONE_API_KEY = os.getenv("ASI_ONE_API_KEY")
+        self.ASI_ONE_URL = os.getenv("ASI_ONE_URL", "https://api.asi1.ai/v1/chat/completions")
+        self.ASI_ONE_MODEL = os.getenv("ASI_ONE_MODEL", "asi1-mini")
+        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        self.DEBUG_ALLOW_NO_LLM = os.getenv("DEBUG_ALLOW_NO_LLM", "0") == "1"
+
+    def validate(self):
+        if not self.MODERATOR_AGENT_SEED:
+            raise ValueError("Not found/set: MODERATOR_AGENT_SEED")
+        if not self.ASI_ONE_API_KEY and not self.GEMINI_API_KEY:
+            raise ValueError("Not found/set: ASI_ONE_API_KEY/GEMINI_API_KEY")
+
+config = Config()
+config.validate()
 
 
 
@@ -45,6 +52,28 @@ class ModerationRequest(Model):
 
 class ModerationResponse(Model):
     is_inappropriate: bool
+
+
+
+# -----------------------------------------------------------------------------#
+# Error Handling
+# -----------------------------------------------------------------------------
+def handle_http_error(e: httpx.HTTPStatusError):
+    body_text = None
+    try:
+        body_text = (e.response.text) if e.response else ""
+    except Exception:
+        body_text = str(e.response.text) if e.response else ""
+    raise RuntimeError(f"HTTP error occurred: {e.response.status_code if e.response else ''}: {body_text}") from e
+
+
+def handle_network_error(e: Exception):
+    raise RuntimeError(f"Network or timeout error occurred: {str(e)}") from e
+
+
+def handle_json_error(resp: httpx.Response):
+    text_raw = resp.text if hasattr(resp, "text") else "<no-body>"
+    raise RuntimeError(f"Error parsing JSON response: {text_raw}")
 
 
 
@@ -61,123 +90,73 @@ SYSTEM_PROMPT = (
     "Respond with only one word: 'YES' if it is Truly Harmful, or 'NO' if it is not."
 )
 
-if genai and GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-    except Exception:
-        pass
+harmful_words = [
+    "hate", "slut", "bitch", "bastard", "whore", "motherfucker", "cunt", "nigga", "nigger", "fag", "queer", "retard", "autistic", "kill yourself", "suicide", "rape", "pedophile", "molest", "slavery", "racist", "sexist", "abuse", "incest", "violence", "terrorist", "nazi", "neo-nazi", "antisemite", "blacklist", "sexism", "homophobia", "bigot", "feminazi", "rape culture"
+]
 
-async def classify_with_asione(text: str) -> (bool):
+def contains_harmful_words(text):
+    return any(word in text.lower() for word in harmful_words)
 
-    if not ASI_ONE_API_KEY:
-        raise RuntimeError("ASI:One API key not configured")
+async def classify_message(text: str) -> bool:
+    if contains_harmful_words(text):
+        return True
+    if config.ASI_ONE_API_KEY:
+        return await classify_with_asione(text)
+    if config.GEMINI_API_KEY and genai:
+        return await classify_with_gemini(text)
+    return False
 
+
+async def classify_with_asione(text: str) -> bool:
     headers = {
-        "Authorization": f"Bearer {ASI_ONE_API_KEY}",
+        "Authorization": f"Bearer {config.ASI_ONE_API_KEY}",
         "Content-Type": "application/json",
     }
-
     body = {
-        "model": ASI_ONE_MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": text}
-        ],
+        "model": config.ASI_ONE_MODEL,
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": text}],
     }
 
     async with httpx.AsyncClient(timeout=20.0) as client:
         try:
-            resp = await client.post(ASI_ONE_URL, headers=headers, json=body)
-            # This will raise httpx.HTTPStatusError for 4xx/5xx after .raise_for_status()
+            resp = await client.post(config.ASI_ONE_URL, headers=headers, json=body)
             resp.raise_for_status()
         except httpx.HTTPStatusError as e:
-            # include response text for debugging
-            body_text = None
-            try:
-                body_text = (await e.response.aread()).decode(errors="ignore") if e.response else ""
-            except Exception:
-                body_text = str(e.response.text) if e.response is not None else ""
-            raise RuntimeError(f"ASI:One HTTP error {e.response.status_code if e.response else ''}: {body_text}") from e
+            handle_http_error(e)
         except Exception as e:
-            # network / timeout etc
-            raise RuntimeError(f"Error calling ASI:One: {e}") from e
+            handle_network_error(e)
 
-        # parse JSON safely
         try:
             data = resp.json()
         except Exception as e:
-            # include raw text for debugging when JSON parse fails
-            text_raw = resp.text if hasattr(resp, "text") else "<no-body>"
-            raise RuntimeError(f"ASI:One response not JSON: {text_raw}") from e
+            handle_json_error(resp)
 
-    # Try to extract assistant content
-    explanation = ""
-    try:
-        explanation = data["choices"][0]["message"]["content"].strip()
-    except Exception:
-        # fallbacks
-        if isinstance(data, dict):
-            if "result" in data:
-                explanation = str(data["result"])
-            elif "output" in data:
-                if isinstance(data["output"], str):
-                    explanation = data["output"]
-                elif isinstance(data["output"], dict) and "text" in data["output"]:
-                    explanation = data["output"]["text"]
-            elif "choices" in data and len(data["choices"]) > 0:
-                first = data["choices"][0]
-                if isinstance(first, dict):
-                    if "text" in first:
-                        explanation = str(first["text"])
-                    elif "message" in first and isinstance(first["message"], dict) and "content" in first["message"]:
-                        explanation = str(first["message"]["content"])
-        if not explanation:
-            explanation = json.dumps(data)
+    return parse_response(data)
 
-    normalized = explanation.strip().upper()
-    # interpret YES/NO
-    first_line = normalized.splitlines()[0] if normalized else ""
-    if first_line.startswith("YES") or first_line.split()[:1] == ["YES"]:
-        is_bad = True
-    elif first_line.startswith("NO") or first_line.split()[:1] == ["NO"]:
-        is_bad = False
-    else:
-        is_bad = "YES" in normalized
 
-    return is_bad
-
-async def classify_with_gemini(text: str) -> (bool):
-    if not genai or not GEMINI_API_KEY:
-        raise RuntimeError("Gemini not available or GEMINI_API_KEY missing")
+async def classify_with_gemini(text: str) -> bool:
+    if not genai:
+        raise RuntimeError("Gemini API is not available")
+    
     model = genai.GenerativeModel("gemini-1.5-flash-latest")
     prompt = SYSTEM_PROMPT + "\n\nUSER MESSAGE: " + text
+    
     try:
         response = await model.generate_content_async(prompt)
         raw = response.text if hasattr(response, "text") else str(response)
     except Exception as e:
         raise RuntimeError(f"Gemini call failed: {e}") from e
 
-    # Normalize answer text -> boolean
+    return parse_response(raw)
+
+
+def parse_response(raw):
     normalized = raw.strip().upper()
-    # Look for an explicit YES/NO at the start or anywhere
-    if normalized.startswith("YES") or normalized.split()[0] == "YES" or " YES " in f" {normalized} ":
+    if normalized.startswith("YES"):
         return True
-    if normalized.startswith("NO") or normalized.split()[0] == "NO" or " NO " in f" {normalized} ":
+    if normalized.startswith("NO"):
         return False
-
-    # If unsure, fallback to conservative default (not harmful)
     return False
-
-harmful_words = [
-    "hate", "slut", "bitch", "bastard", "whore", "motherfucker", "cunt", "nigger", "fag", "queer", 
-    "retard", "autistic", "kill yourself", "suicide", "rape", "pedophile", "molest", "slavery", 
-    "racist", "sexist", "abuse", "incest", "violence", "terrorist", "nazi", "neo-nazi", "antisemite",
-    "blacklist", "sexism", "homophobia", "bigot", "feminazi", "rape culture"
-]
-
-# Function to check for harmful words
-def contains_harmful_words(text):
-    return any(word in text.lower() for word in harmful_words)
 
 
 
@@ -186,7 +165,7 @@ def contains_harmful_words(text):
 # -----------------------------------------------------------------------------
 def create_moderator_agent(seed: str) -> Agent:
     if not seed:
-        raise ValueError("MODERATOR_AGENT_SEED not provided")
+        raise ValueError("Not found/set: MODERATOR_AGENT_SEED")
 
     agent = Agent(
         name="moderator_agent",
@@ -207,79 +186,29 @@ def create_moderator_agent(seed: str) -> Agent:
     @moderation_protocol.on_message(model=ModerationRequest, replies=ModerationResponse)
     async def moderate_message(ctx: Context, sender: str, msg: ModerationRequest):
         ctx.logger.info(f"[moderator] Received moderation request for text: '{msg.text}'")
-        is_bad = False
-        tried_methods = []
-        try:
-            if contains_harmful_words(msg.text):
-                is_bad = True
-                ctx.logger.info(f"[moderator] Message contains harmful words, classified as harmful.")
-            else:
-                if ASI_ONE_API_KEY:
-                    tried_methods.append("ASI:One")
-                    is_bad = await classify_with_asione(msg.text)
-                elif GEMINI_API_KEY and genai:
-                    tried_methods.append("Gemini")
-                    is_bad = await classify_with_gemini(msg.text)
-                else:
-                    tried_methods.append("None")
-                    is_bad = False
-                    if not DEBUG_ALLOW_NO_LLM:
-                        ctx.logger.error("No LLM API keys found and DEBUG_ALLOW_NO_LLM is false.")
-        except Exception as e:
-            ctx.logger.error(f"Error during classification ({tried_methods}): {repr(e)}")
-            ctx.logger.error(traceback.format_exc())
-            is_bad = False
-
-        # response
-        try:
-            resp = ModerationResponse(is_inappropriate=is_bad)
-            await ctx.send(sender, resp)
-            ctx.logger.info(f"[moderator] Sent response to caller: is_inappropriate={is_bad}")
-        except Exception as e:
-            ctx.logger.error(f"[moderator] Failed to send response to caller: {e}")
+        is_bad = await classify_message(msg.text)
+        resp = ModerationResponse(is_inappropriate=is_bad)
+        await ctx.send(sender, resp)
+        ctx.logger.info(f"[moderator] Sent response to caller: is_inappropriate={is_bad}")
 
     chat_proto = Protocol(spec=chat_protocol_spec)
 
     @chat_proto.on_message(ChatMessage)
     async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
-        await ctx.send(sender, ChatAcknowledgement(
-            timestamp=datetime.utcnow(), acknowledged_msg_id=msg.msg_id
-        ))
+        await ctx.send(sender, ChatAcknowledgement(timestamp=datetime.utcnow(), acknowledged_msg_id=msg.msg_id))
 
         user_text = None
-        saw_start = False
         for item in msg.content:
             if isinstance(item, TextContent):
                 user_text = item.text
                 break
-            if isinstance(item, StartSessionContent):
-                saw_start = True
 
-        if saw_start and not user_text:
-            reply = "Hi! Send me a message and I’ll classify if it’s inappropriate."
-        else:
-            try:
-                is_bad = False
-                if user_text and contains_harmful_words(user_text):
-                    is_bad = True
-                else:
-                    if user_text and ASI_ONE_API_KEY:
-                        is_bad = await classify_with_asione(user_text)
-                    elif user_text and GEMINI_API_KEY and genai:
-                        is_bad = await classify_with_gemini(user_text)
-                    else:
-                        is_bad = False
-                reply = f"Inappropriate: {'YES' if is_bad else 'NO'}"
-            except Exception as e:
-                ctx.logger.error(f"Chat moderation error: {e}")
-                reply = "Sorry, I couldn't process that right now."
-
+        is_bad = await classify_message(user_text) if user_text else False
+        reply = f"Inappropriate: {'YES' if is_bad else 'NO'}"
         await ctx.send(sender, ChatMessage(
             timestamp=datetime.utcnow(),
             msg_id=uuid4(),
-            content=[
-                TextContent(type="text", text=reply),
-            ],
+            content=[TextContent(type="text", text=reply)],
         ))
 
     @chat_proto.on_message(ChatAcknowledgement)
@@ -287,42 +216,18 @@ def create_moderator_agent(seed: str) -> Agent:
         ctx.logger.info(
             f"Received chat acknowledgement from {sender} for {msg.acknowledged_msg_id}"
         )
-    
+
     @agent.on_rest_post("/moderate", ModerationRequest, ModerationResponse)
     async def rest_moderate(ctx: Context, req: ModerationRequest) -> ModerationResponse:
-        text = req.text or ""
-        is_bad = False
-        tried_methods = []
-        
-        try:
-            if contains_harmful_words(text):
-                is_bad = True
-            else:
-                if ASI_ONE_API_KEY:
-                    tried_methods.append("ASI:One")
-                    is_bad = await classify_with_asione(text)
-                elif GEMINI_API_KEY and genai:
-                    tried_methods.append("Gemini")
-                    is_bad = await classify_with_gemini(text)
-                else:
-                    tried_methods.append("None")
-                    is_bad = False
-                    if not DEBUG_ALLOW_NO_LLM:
-                        ctx.logger.error("No LLM API keys found and DEBUG_ALLOW_NO_LLM is false.")
-
-        except Exception as e:
-            ctx.logger.error(f"REST moderation error ({tried_methods}): {repr(e)}")
-            ctx.logger.error(traceback.format_exc())
-            is_bad = False
-
-        response = ModerationResponse(is_inappropriate=is_bad)
-
-        # 
-
-        return response
-
-    agent.include(moderation_protocol)
-    agent.include(chat_proto,publish_manifest=True)
+        is_bad = await classify_message(req.text or "")
+        return ModerationResponse(is_inappropriate=is_bad)
+    
+    try:
+        agent.include(moderation_protocol)
+        agent.include(chat_proto, publish_manifest=True)
+    except Exception as e:
+        print("Error including protocol:")
+        traceback.print_exc()
 
     return agent
 
@@ -332,9 +237,7 @@ def create_moderator_agent(seed: str) -> Agent:
 # Run
 # -----------------------------------------------------------------------------
 def main():
-    if not MODERATOR_AGENT_SEED:
-        raise ValueError("MODERATOR_AGENT_SEED environment variable not set. Please set it in .env")
-    agent = create_moderator_agent(seed=MODERATOR_AGENT_SEED)
+    agent = create_moderator_agent(seed=config.MODERATOR_AGENT_SEED)
     print("Starting moderator agent... (listening on port 8000)")
     agent.run()
 
