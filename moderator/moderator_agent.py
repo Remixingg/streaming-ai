@@ -151,7 +151,15 @@ async def classify_with_gemini(text: str) -> bool:
 
 
 def parse_response(raw):
-    normalized = raw.strip().upper()
+    normalized = ""
+    if isinstance(raw, dict):
+        if 'choices' in raw:
+            normalized = raw['choices'][0]['message']['content']
+        elif 'output' in raw:
+            normalized = raw['output']
+
+    if isinstance(normalized, str):
+        normalized = normalized.strip().upper()
     if normalized.startswith("YES"):
         return True
     if normalized.startswith("NO"):
