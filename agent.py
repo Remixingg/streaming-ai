@@ -317,24 +317,8 @@ def create_moderator_agent(seed: str) -> Agent:
             is_bad = False
 
         response = ModerationResponse(is_inappropriate=is_bad)
-    
-        if ICP_URL:
-            try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    payload = {
-                        "text": text,
-                        "is_inappropriate": bool(is_bad),
-                        "source_agent": agent.wallet.address(),
-                    }
-                    r = await client.post(ICP_URL, json=payload)
-                    if r.status_code >= 200 and r.status_code < 300:
-                        ctx.logger.info("[moderator] Successfully posted moderation result to ICP canister.")
-                    else:
-                        ctx.logger.warning(f"[moderator] Posting to ICP returned status {r.status_code}: {r.text}")
-            except Exception as e:
-                ctx.logger.error(f"[moderator] Error sending moderation result to ICP: {e}")
-        else:
-            ctx.logger.debug("ICP_URL not configured; skipping ICP logging.")
+
+        # 
 
         return response
 
