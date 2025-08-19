@@ -313,7 +313,6 @@ def create_moderator_agent(seed: str) -> Agent:
         except Exception as e:
             ctx.logger.error(f"REST moderation error ({tried_methods}): {repr(e)}")
             ctx.logger.error(traceback.format_exc())
-            method = "error"
             is_bad = False
 
         response = ModerationResponse(is_inappropriate=is_bad)
