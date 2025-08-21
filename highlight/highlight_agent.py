@@ -164,24 +164,39 @@ async def upload_clip_to_supabase(clip_path):
         print(f"Error uploading clip {clip_path}: {e}")
         return None
 
-# async def handle_video_processing(ctx, sender, msg):
-#     video_url = msg.video_url
-#     response = HighlightResponse(clips=[])
-#     if video_url:
-#         processor = VideoProcessor()
-#         video_path = processor.download_video(video_url)
-#         transcript = processor.transcribe_video(video_path)
-#         highlights = processor.analyze_highlights(transcript)
-#         clips = processor.generate_clips(video_path, highlights, os.path.basename(video_path))
+async def handle_highlight_generate(video_url, is_chat=False):
+    response = HighlightResponse(clips=[])
+    if video_url:
+        processor = VideoProcessor()
+        video_path = processor.download_video(video_url)
+        transcript = processor.transcribe_video(video_path)
+        highlights = processor.analyze_highlights(transcript)
+        clips = processor.generate_clips(video_path, highlights, os.path.basename(video_path))
 
-#         # Upload clips to Supabase and get URLs
-#         for clip in clips:
-#             clip_url = await upload_clip_to_supabase(clip['path'])
-#             if clip_url:
-#                 clip['path'] = clip_url  # Replace the local path with the Supabase URL
+        if is_chat == True:
+            formatted_clips=[]
+            for clip in clips:
+                clip_url = await upload_clip_to_supabase(clip['path'])
+                if clip_url:
+                    clip['path'] = clip_url
+                if is_chat == True:
+                    formatted_clips.append(
+                        f"Clip {len(formatted_clips) + 1}:\n\n"
+                        f"Description: {clip['description']}\n\n"
+                        f"Start Time: {clip['start']}s\n\n"
+                        f"End Time: {clip['end']}s\n\n"
+                        f"[Download Clip]({clip['path']})\n\n"
+                        "--------------------\n\n"
+                    )
+            response.clips=formatted_clips
+        else:
+            for clip in clips:
+                clip_url = await upload_clip_to_supabase(clip['path'])
+                if clip_url:
+                    clip['path'] = clip_url
+            response.clips=clips
 
-#         response = HighlightResponse(clips=clips)
-#     await ctx.send(sender, response)
+    return response
 
 async def is_valid_video_url(video_url: str) -> bool:
     try:
@@ -221,36 +236,13 @@ def create_video_processing_agent(seed: str) -> Agent:
     async def handle_video_processing(ctx: Context, sender: str, msg: HighlightRequest):
         video_url = msg.video_url
         ctx.logger.info(f"[highlight] Received highlight request for text: '{video_url}'")
-        response = HighlightResponse(clips=[])
-        if video_url:
-            processor = VideoProcessor()
-            video_path = processor.download_video(video_url)
-            transcript = processor.transcribe_video(video_path)
-            highlights = processor.analyze_highlights(transcript)
-            clips = processor.generate_clips(video_path, highlights, os.path.basename(video_path))
-            for clip in clips:
-                clip_url = await upload_clip_to_supabase(clip['path'])
-                if clip_url:
-                    clip['path'] = clip_url
-            response.clips=clips
+        response = await handle_highlight_generate(video_url)
         await ctx.send(sender, response)
 
     @agent.on_rest_post("/generate_highlight", HighlightRequest, HighlightResponse)
     async def rest_generate_highlights(ctx: Context, req: HighlightRequest) -> HighlightResponse:
         video_url = req.video_url
-        response = HighlightResponse(clips=[])
-        if video_url and await is_valid_video_url(video_url):
-            processor = VideoProcessor()
-            video_path = processor.download_video(video_url)
-            transcript = processor.transcribe_video(video_path)
-            highlights = processor.analyze_highlights(transcript)
-            clips = processor.generate_clips(video_path, highlights, os.path.basename(video_path))
-
-            for clip in clips:
-                clip_url = await upload_clip_to_supabase(clip['path'])
-                if clip_url:
-                    clip['path'] = clip_url
-            response.clips=clips
+        response = await handle_highlight_generate(video_url)
         return response
 
 
@@ -266,30 +258,7 @@ def create_video_processing_agent(seed: str) -> Agent:
                 user_text = item.text
                 break
 
-        response=HighlightResponse(clips=[])
-        if user_text:
-            processor = VideoProcessor()
-            video_path = processor.download_video(user_text)
-            transcript = processor.transcribe_video(video_path)
-            highlights = processor.analyze_highlights(transcript)
-            clips = processor.generate_clips(video_path, highlights, os.path.basename(video_path))
-
-            formatted_clips = []
-            for clip in clips:
-                clip_url = await upload_clip_to_supabase(clip['path'])
-                if clip_url:
-                    clip['path'] = clip_url
-                formatted_clips.append(
-                    f"Clip {len(formatted_clips) + 1}:\n\n"
-                    f"Description: {clip['description']}\n\n"
-                    f"Start Time: {clip['start']}s\n\n"
-                    f"End Time: {clip['end']}s\n\n"
-                    f"[Download Clip]({clip['path']})\n\n"
-                    "--------------------\n\n"
-                )
-
-            response.clips=formatted_clips
-        
+        response = await handle_highlight_generate(user_text,is_chat=True)
         await ctx.send(sender, ChatMessage(
             timestamp=datetime.utcnow(),
             msg_id=uuid4(),
