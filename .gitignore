@@ -182,3 +182,8 @@ cython_debug/
 private_keys.json
 test_agent.py
 run_test.py
+
+.clips
+clips/
+.downloads
+downloads/
