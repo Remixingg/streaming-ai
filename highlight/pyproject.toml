@@ -1,0 +1,15 @@
+[project]
+name = "highlight"
+version = "0.1.0"
+readme = "highlight_README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "ffmpeg-python>=0.2.0",
+    "google-generativeai>=0.8.5",
+    "openai-whisper>=20250625",
+    "python-dotenv>=1.1.1",
+    "requests>=2.32.4",
+    "supabase>=2.18.1",
+    "uagents>=0.22.7",
+    "uagents-core>=0.3.7",
+]
