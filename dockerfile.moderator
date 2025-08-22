@@ -6,4 +6,5 @@ COPY . .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "moderator_agent.py"]
+CMD ["python", "moderator/moderator_agent.py"]
+

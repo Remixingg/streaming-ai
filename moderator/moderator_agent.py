@@ -181,7 +181,7 @@ def create_moderator_agent(seed: str) -> Agent:
     agent = Agent(
         name="moderator_agent",
         seed=seed,
-        port=8000,
+        port=8002,
         mailbox=True,
         publish_agent_details=True,
         readme_path="moderator/moderator_README.md",

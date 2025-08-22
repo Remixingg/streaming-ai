@@ -2,11 +2,11 @@ services:
   moderator_ai:
     build: 
       context: .
-      dockerfile: dockerfile.highlight
+      dockerfile: dockerfile.moderator
     image: moderator-ai
     container_name: moderator-ai
     ports:
-      - 8000:8000
+      - 8002:8002
     networks:
       - caddy_net
 
