@@ -216,13 +216,16 @@ def create_video_processing_agent(seed: str) -> Agent:
     if not seed:
         raise ValueError("Not found/set: HIGHLIGHT_AGENT_SEED")
 
+    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+    README_PATH = os.path.join(CURRENT_DIR, "highlight_README.md")
+
     agent = Agent(
         name="highlight_agent",
         seed=seed,
         port=8001,
         mailbox=True,
         publish_agent_details=True,
-        readme_path="highlight/highlight_README.md",
+        readme_path=README_PATH,
     )
 
     try:
