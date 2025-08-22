@@ -234,7 +234,7 @@ def create_moderator_agent(seed: str) -> Agent:
         return ModerationResponse(is_inappropriate=is_bad)
     
     try:
-        agent.include(moderation_protocol)
+        agent.include(moderation_protocol, publish_manifest=True)
         agent.include(chat_proto, publish_manifest=True)
     except Exception as e:
         print("Error including protocol:")

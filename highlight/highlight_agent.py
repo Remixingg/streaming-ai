@@ -275,7 +275,7 @@ def create_video_processing_agent(seed: str) -> Agent:
         )
 
     try:
-        agent.include(highlight_protocol)
+        agent.include(highlight_protocol, publish_manifest=True)
         agent.include(chat_proto, publish_manifest=True)
     except Exception as e:
         print("Error including protocol:", e)
