@@ -1,6 +1,6 @@
 services:
   hightlight_ai:
-    build: .
+    build: dockerfile.highlight
     image: highlight-ai
     container_name: highlight-ai
     ports:
