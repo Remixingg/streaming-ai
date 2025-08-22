@@ -1,0 +1,13 @@
+services:
+  hightlight_ai:
+    build: .
+    image: highlight-ai
+    container_name: highlight-ai
+    ports:
+      - 8001:8001
+    networks:
+      - caddy_net
+
+networks:
+  caddy_net:
+    external: true

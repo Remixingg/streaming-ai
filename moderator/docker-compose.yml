@@ -1,0 +1,13 @@
+services:
+  moderator_ai:
+    build: .
+    image: moderator-ai
+    container_name: moderator-ai
+    ports:
+      - 8000:8000
+    networks:
+      - caddy_net
+
+networks:
+  caddy_net:
+    external: true
