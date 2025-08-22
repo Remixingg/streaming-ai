@@ -1,6 +1,8 @@
 services:
   moderator_ai:
-    build: .
+    build: 
+      context: .
+      dockerfile: dockerfile.highlight
     image: moderator-ai
     container_name: moderator-ai
     ports:
