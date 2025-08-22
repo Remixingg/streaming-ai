@@ -175,6 +175,9 @@ def create_moderator_agent(seed: str) -> Agent:
     if not seed:
         raise ValueError("Not found/set: MODERATOR_AGENT_SEED")
 
+    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+    README_PATH = os.path.join(CURRENT_DIR, "moderator_README.md")
+
     agent = Agent(
         name="moderator_agent",
         seed=seed,
