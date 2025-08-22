@@ -29,8 +29,8 @@ class Config:
         self.SUPABASE_URL= os.getenv("SUPABASE_URL")
         self.SUPABASE_KEY = os.getenv("SUPABASE_KEY")
         self.SUPABASE_BUCKET_HIGHLIGHT_NAME = os.getenv("SUPABASE_BUCKET_HIGHLIGHT_NAME")
-        os.environ["PATH"] += os.pathsep + r'C:\ffmpeg'
-        self.FFMPEG_PATH = r'C:\ffmpeg\ffmpeg.exe'
+        os.environ["PATH"] += os.pathsep + os.getenv("FFMPEG_DIR_PATH")
+        self.FFMPEG_PATH = os.getenv("FFMPEG_PATH")
         
     def validate(self):
         if not self.GEMINI_API_KEY:
