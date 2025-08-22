@@ -220,7 +220,7 @@ def create_video_processing_agent(seed: str) -> Agent:
     README_PATH = os.path.join(CURRENT_DIR, "highlight_README.md")
 
     agent = Agent(
-        name="highlight_agent",
+        name="Highlight Agent",
         seed=seed,
         port=8001,
         mailbox=True,
