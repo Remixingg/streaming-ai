@@ -24,7 +24,7 @@ The AI functionality is handled by two independent, autonomous agents built with
 
 provides real-time chat moderation to filter harmful and inappropriate content while allowing for playful banter.
 
-* ** It receives a chat message, classifies it as either "Truly Harmful" or "Acceptable," and returns a boolean response.
+* It receives a chat message, classifies it as either "Truly Harmful" or "Acceptable," and returns a boolean response.
 * **Methodology:** It uses a powerful system prompt with a Gemini or ASI:One LLM to understand the context of the message, combined with a keyword-based pre-filter for instantly blocking universally unacceptable terms.
 
 ![Moderator Agent in Action](moderator/moderator-preview.gif)
