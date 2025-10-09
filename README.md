@@ -8,6 +8,24 @@ This repository contains the source code for the two Python-based AI agents deve
 
 ---
 
+## 📑 Table of Contents
+
+- [Introduction: The Vision for Strevo](#-introduction-the-vision-for-strevo)
+- [The AI Agents](#-the-ai-agents)
+  - [1. Moderator Agent](#1-moderator-agent)
+  - [2. Highlight Agent](#2-highlight-agent)
+- [System Architecture](#-system-architecture)
+- [Tech Stack](#-tech-stack)
+- [Getting Started](#-getting-started)
+  - [Prerequisites](#1-prerequisites)
+  - [Installation](#2-installation)
+- [Running the AI Agents](#-running-the-ai-agents)
+- [Testing the API Endpoints](#-testing-the-api-endpoints)
+  - [Test the Moderator Agent](#test-the-moderator-agent)
+  - [Test the Highlight Agent](#test-the-highlight-agent)
+
+---
+
 ## 🚀 Introduction: The Vision for Strevo
 
 Traditional streaming platforms like Twitch and YouTube face significant challenges with content moderation, user engagement, and centralization. Weak moderation leads to toxic communities viewers often miss the most exciting moments of a long stream.
@@ -82,7 +100,7 @@ Follow these instructions to set up and run the AI agents on your local machine.
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/Remixingg/streaming-ai.git](https://github.com/Remixingg/streaming-ai.git)
+    git clone https://github.com/Remixingg/streaming-ai.git
     cd streaming-ai
     ```
 
